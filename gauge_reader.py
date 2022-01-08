@@ -54,6 +54,13 @@ def get_center(img: np.ndarray) -> Tuple[int, int, int, int, Tuple[int, int]]:
         Tuple[int, int, int, int, Tuple[int, int]]: 計測版(丸)の座標(x, y, w, h),
                                                     中心の座標(center)
     """
+    BORAD_SURFACE_AREA = 1000000  # 盤面の面積
+    OFFSET_Y = 35  # 盤面中心からの模様・目盛り印字のずれ
+    OFFSET_CENTER_Y = 25  # 盤面中心からの針の回転中心のずれ
+    CIRCLE_WIDTH = 270  # "Enjoy Cooking!" の模様の半径
+    OFFSET_OUTER_CIRCLE_WIDTH = 110  # 目盛りが印字されている部分に弧を描くための修正幅
+    GAUGE_WIDTH = 100  # 目盛りが印字されている幅
+
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # convert to gray
 
     _, img_thresh = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
@@ -66,26 +73,24 @@ def get_center(img: np.ndarray) -> Tuple[int, int, int, int, Tuple[int, int]]:
 
     for i in range(0, len(contours)):
         if len(contours[i]) > 0:
-            if cv2.contourArea(contours[i]) < 1000000:
+            if cv2.contourArea(contours[i]) < BORAD_SURFACE_AREA:
                 continue
 
             cv2.polylines(img, contours[i], True, (255, 255, 255), 5)
             x, y, w, h = cv2.boundingRect(contours[i])
-    offset_y = 35
-    circle_width1 = 270
     cv2.circle(img,
-               (x + int(w / 2), y + int(h / 2) - offset_y),
-               circle_width1,
+               (x + int(w / 2), y + int(h / 2) - OFFSET_Y),
+               CIRCLE_WIDTH,
                (255, 255, 255),
                -1,
                cv2.LINE_AA)  # draw circle
     cv2.circle(img,
-               (x + int(w / 2), y + int(h / 2) - offset_y),
-               int(w / 2) - 110,
+               (x + int(w / 2), y + int(h / 2) - OFFSET_Y),
+               int(w / 2) - OFFSET_OUTER_CIRCLE_WIDTH,
                (255, 255, 255),
-               100,
+               GAUGE_WIDTH,
                cv2.LINE_AA)  # draw circle
-    center = (x + int(w / 2), y + int(h / 2) - offset_y + 10)
+    center = (x + int(w / 2), y + int(h / 2) - OFFSET_CENTER_Y)
     if logger.isEnabledFor(logging.DEBUG):
         cv2.imwrite('debug2.jpg', img)
 
@@ -118,7 +123,7 @@ def get_meter_coordinates(img: np.ndarray,
     for i in range(0, len(contours)):
         if len(contours[i]) > 0:
 
-            # remove small objects
+            # remove small & large objects
             if cv2.contourArea(contours[i]) < 2600 \
                or cv2.contourArea(contours[i]) > 4000:
                 continue
@@ -160,15 +165,21 @@ def calc_value(center: Tuple[int, int], point: Tuple[int, int]) -> int:
     Returns:
         int: 針が示す計測値(0-1000) 計測不能のときは -1
     """
+    MIN_VALUE = 0
+    MAX_VALUE = 1000
+    ROUND_VALUE = 1210  # 一周360°の計測量
+    ZERO_VECTOR = [-266, 432]  # 中心から目盛り0方向のベクトル
+    ROUND = 360  # 一周360°
+
     # ベクトルに直す
-    a = np.array([-266, 432])
+    a = np.array(ZERO_VECTOR)
     b = np.array([point[0] - center[0], point[1] - center[1]])
 
     if point[0] < center[0]:
-        value = int(tangent_angle(a, b) * (605/180))
+        value = int(tangent_angle(a, b) * (ROUND_VALUE/ROUND))
     else:
-        value = int((360 - tangent_angle(a, b)) * (605/180))
-    if 0 <= value <= 1000:
+        value = int((ROUND - tangent_angle(a, b)) * (ROUND_VALUE/ROUND))
+    if MIN_VALUE <= value <= MAX_VALUE:
         return value
     else:
         return -1
@@ -200,7 +211,7 @@ def main(input):
 
 def parse_args():
     # オプションの解析
-    parser = argparse.ArgumentParser(description='OpenPoseの実行')
+    parser = argparse.ArgumentParser(description='丸型メーターの値を読む')
 
     parser.add_argument(
                         'input',
